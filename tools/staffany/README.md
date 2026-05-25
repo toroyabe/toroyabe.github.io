@@ -33,11 +33,29 @@ export STAFFANY_BASE_URL='https://api.staffany.com'    # adjust if different
 
 python3 weekly_report.py \
     --tz Asia/Singapore \
-    --contract-filter FULL_TIME \
-    --output report.xlsx
+    --contract-filter FULL_TIME
 ```
 
-Open `report.xlsx` in Excel / Google Sheets / Numbers.
+By default the script writes to the OneDrive-synced report file:
+
+```
+~/Library/CloudStorage/OneDrive-ILHAFORMOSAPTE.LTD/_HR/STAFFANY - TIMESHEET/Staffany API Report.xlsx
+```
+
+OneDrive picks up the saved file and syncs it back to SharePoint, so the
+shared workbook stays up to date automatically. Override the destination with
+`--output` or `STAFFANY_OUTPUT`.
+
+### How weeks are stored
+
+- Each run writes the report into a single sheet named after the week
+  (e.g. `2026-06-01 – 2026-06-07`).
+- If the workbook already exists, the new sheet is inserted at the front
+  (most recent first); old weeks stay untouched as history.
+- Re-running the same week refreshes that tab in place — the existing one
+  is removed and replaced with the new data.
+- Close the workbook in Excel before running; openpyxl can't write while
+  Excel holds the file open.
 
 ## Useful flags
 
@@ -59,8 +77,7 @@ A typical Singapore weekday morning run that emails the report to a manager:
 ```cron
 # 09:00 every Friday SGT — generate next-week report
 0 9 * * 5  cd ~/staffany && STAFFANY_TOKEN=$(cat .token) \
-    python3 weekly_report.py --contract-filter FULL_TIME \
-    --output ~/staffany-reports/$(date +\%Y-\%m-\%d).xlsx
+    python3 weekly_report.py --contract-filter FULL_TIME
 ```
 
 ## Notes

@@ -30,11 +30,15 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 try:
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
 except ImportError:
     sys.exit("This script requires openpyxl. Install with: pip install openpyxl")
+
+DEFAULT_OUTPUT_PATH = os.path.expanduser(
+    "~/Library/CloudStorage/OneDrive-ILHAFORMOSAPTE.LTD/_HR/STAFFANY - TIMESHEET/Staffany API Report.xlsx"
+)
 
 DEFAULT_BASE_URL = "https://api.staffany.com"
 # Singaporean full-time barista standard: 9.5h x 5 days = 47.5h / week.
@@ -59,7 +63,10 @@ def parse_args():
                         "Default: include everyone.")
     p.add_argument("--section-id", action="append", dest="section_ids",
                    help="Restrict to one or more section UUIDs (repeatable)")
-    p.add_argument("--output", default="weekly-report.xlsx")
+    p.add_argument("--output", default=os.environ.get("STAFFANY_OUTPUT", DEFAULT_OUTPUT_PATH),
+                   help="Path to the .xlsx workbook. If the file exists, a new sheet for the week "
+                        "is added (or an existing sheet for the same week is overwritten). "
+                        "Default points at the OneDrive-synced 'Staffany API Report.xlsx'.")
     p.add_argument("--debug", action="store_true", help="Print raw API payloads to stderr")
     return p.parse_args()
 
@@ -525,14 +532,17 @@ def write_header_block(ws, meta):
     return 4  # leave row 3 blank before first section
 
 
-def build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
-                   actuals_prev, scheduled_prev, sales_prev, sections,
-                   day_offs_next, leaves_next, args):
-    wb = Workbook()
-    ws = wb.active
-    # Sheet name: the week (Excel caps tab names at 31 chars)
-    ws.title = meta["week_label"][:31]
+def _sheet_name_for(week_label):
+    # Excel caps sheet names at 31 chars and forbids: : \ / ? * [ ]
+    name = week_label
+    for bad in ':\\/?*[]':
+        name = name.replace(bad, "-")
+    return name[:31]
 
+
+def populate_week_sheet(ws, meta, staff, scheduled_next, unassigned_next, comps_by_user,
+                        actuals_prev, scheduled_prev, sales_prev, sections,
+                        day_offs_next, leaves_next, args):
     row = write_header_block(ws, meta)
     row = write_ot_section(ws, row, staff, scheduled_next, comps_by_user,
                            args.ot_cap, args.daily_cap, args.ot_warn_pct, args.contract_filter)
@@ -540,12 +550,35 @@ def build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
     row = write_timesheets_section(ws, row + 1, staff, actuals_prev, scheduled_prev)
     row = write_sales_section(ws, row + 1, sales_prev, sections)
     row = write_leaves_section(ws, row + 1, staff, day_offs_next, leaves_next)
-
-    # Column widths: the OT section is the widest (9 cols). Size all touched columns.
     _autosize_columns(ws, used_cols=range(1, 10))
-    # Freeze the title rows so they stay visible while scrolling.
     ws.freeze_panes = "A3"
-    return wb
+
+
+def open_or_create_workbook(path, week_label):
+    """Open an existing .xlsx and prepare a sheet for this week; or create a new workbook.
+
+    If a sheet for ``week_label`` already exists, it is removed and re-created so the
+    week's data is refreshed in place. The new sheet is inserted at the front so the
+    most recent report is the first tab.
+    """
+    sheet_name = _sheet_name_for(week_label)
+    if os.path.exists(path):
+        wb = load_workbook(path)
+        if sheet_name in wb.sheetnames:
+            del wb[sheet_name]
+        # If the workbook had a single empty default sheet (e.g. the "totally empty"
+        # template the user set up), drop it once on first run.
+        leftover = [s for s in wb.sheetnames if s != sheet_name]
+        if len(leftover) == 1:
+            only = wb[leftover[0]]
+            if only.max_row == 1 and only.max_column == 1 and only.cell(row=1, column=1).value is None:
+                del wb[leftover[0]]
+        ws = wb.create_sheet(sheet_name, 0)
+        return wb, ws, "updated"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    return wb, ws, "created"
 
 
 # ---------- Main ----------
@@ -590,11 +623,22 @@ def main():
         "contract_filter": ", ".join(args.contract_filter) if args.contract_filter else None,
     }
 
-    wb = build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
+    out_path = os.path.expanduser(args.output)
+    parent = os.path.dirname(os.path.abspath(out_path))
+    if parent and not os.path.exists(parent):
+        sys.exit(f"Output folder does not exist: {parent}\n"
+                 f"Check that OneDrive is signed in and the folder is synced, or pass --output.")
+
+    wb, ws, action = open_or_create_workbook(out_path, meta["week_label"])
+    populate_week_sheet(ws, meta, staff, scheduled_next, unassigned_next, comps_by_user,
                         actuals_prev, scheduled_prev, sales_prev, sections,
                         day_offs_next, leaves_next, args)
-    wb.save(args.output)
-    print(f"Wrote {args.output}")
+    try:
+        wb.save(out_path)
+    except PermissionError:
+        sys.exit(f"Could not write {out_path} (permission denied). "
+                 f"If the file is open in Excel, close it and re-run.")
+    print(f"{action.capitalize()} sheet '{_sheet_name_for(meta['week_label'])}' in {out_path}")
 
 
 if __name__ == "__main__":
