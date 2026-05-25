@@ -1,38 +1,43 @@
 # StaffAny weekly report
 
-A single-file Python script (stdlib only) that pulls data from the StaffAny API
-and writes an HTML report for the upcoming week. The headline is an
-**OT Capping Weekly Report** tuned for Singaporean full-time baristas
-(standard week 9.5h × 5 days = **47.5h**, daily cap **9.5h**), but the caps and
-contract filter are configurable.
+A single-file Python script that pulls data from the StaffAny API and writes
+a multi-sheet **Excel (.xlsx)** report for the upcoming week. The headline is
+an **OT Capping Weekly Report** tuned for Singaporean full-time baristas
+(standard week 9.5h × 5 days = **47.5h**, daily cap **9.5h**), but the caps
+and contract filter are configurable.
 
-Report sections:
+Workbook sheets:
 
-1. **OT Capping** — next week scheduled hours vs each staff's weekly cap, plus
-   a per-day breakdown that flags any day above the daily cap.
-2. **Shifts per staff** — scheduled hours and shift counts for next week.
-3. **Timesheet actuals** — prior week scheduled vs clocked hours.
-4. **Sales totals** — prior week target/actual sales by section.
-5. **Leaves & day-offs** — approved leaves and day-offs falling in next week.
+1. **Summary** — week, org, parameters, methodology note.
+2. **OT Capping** — next week scheduled hours vs each staff's weekly cap,
+   with red rows for `OVER` (excess weekly or any day > 9.5h) and yellow
+   rows for `WARN` (≥90% of cap). Includes a per-day breakdown of any day
+   exceeding the daily cap.
+3. **Shifts** — scheduled hours and shift counts per staff for next week.
+4. **Timesheets** — prior-week scheduled vs clocked hours.
+5. **Sales** — prior-week target/actual sales by section.
+6. **Leaves** — approved leaves and day-offs falling in next week.
 
 ## Requirements
 
 - Python 3.9+ (uses `zoneinfo` from stdlib).
+- `openpyxl` (`pip install openpyxl`).
 - A StaffAny API bearer token (format `wks_<prefix>.<secret>`).
 
 ## Run
 
 ```bash
+pip install openpyxl
 export STAFFANY_TOKEN='wks_xxx.yyyy'
 export STAFFANY_BASE_URL='https://api.staffany.com'    # adjust if different
 
 python3 weekly_report.py \
     --tz Asia/Singapore \
     --contract-filter FULL_TIME \
-    --output report.html
+    --output report.xlsx
 ```
 
-Open `report.html` in a browser.
+Open `report.xlsx` in Excel / Google Sheets / Numbers.
 
 ## Useful flags
 
@@ -55,7 +60,7 @@ A typical Singapore weekday morning run that emails the report to a manager:
 # 09:00 every Friday SGT — generate next-week report
 0 9 * * 5  cd ~/staffany && STAFFANY_TOKEN=$(cat .token) \
     python3 weekly_report.py --contract-filter FULL_TIME \
-    --output ~/staffany-reports/$(date +\%Y-\%m-\%d).html
+    --output ~/staffany-reports/$(date +\%Y-\%m-\%d).xlsx
 ```
 
 ## Notes

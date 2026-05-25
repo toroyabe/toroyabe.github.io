@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a weekly StaffAny HTML report.
+"""Generate a weekly StaffAny Excel (.xlsx) report.
 
 Sections:
   - OT Capping (headline) -- next week's scheduled hours vs each staff's cap.
@@ -15,11 +15,10 @@ Usage:
   STAFFANY_TOKEN=wks_... python3 weekly_report.py \\
       --base-url https://api.staffany.com \\
       --tz Asia/Singapore \\
-      --output report.html
+      --output report.xlsx
 """
 
 import argparse
-import html as html_mod
 import json
 import os
 import sys
@@ -29,6 +28,13 @@ import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    sys.exit("This script requires openpyxl. Install with: pip install openpyxl")
 
 DEFAULT_BASE_URL = "https://api.staffany.com"
 # Singaporean full-time barista standard: 9.5h x 5 days = 47.5h / week.
@@ -53,7 +59,7 @@ def parse_args():
                         "Default: include everyone.")
     p.add_argument("--section-id", action="append", dest="section_ids",
                    help="Restrict to one or more section UUIDs (repeatable)")
-    p.add_argument("--output", default="weekly-report.html")
+    p.add_argument("--output", default="weekly-report.xlsx")
     p.add_argument("--debug", action="store_true", help="Print raw API payloads to stderr")
     return p.parse_args()
 
@@ -278,17 +284,50 @@ def per_user_actuals(timesheets):
     return totals
 
 
-# ---------- Rendering ----------
+# ---------- Excel rendering ----------
 
-def fmt_hours(minutes):
-    return f"{minutes / 60.0:.2f}"
+HEADER_FILL = PatternFill("solid", fgColor="F2F2F2")
+OVER_FILL = PatternFill("solid", fgColor="FDE2E1")
+WARN_FILL = PatternFill("solid", fgColor="FFF4CE")
+TITLE_FONT = Font(bold=True, size=14)
+HEADER_FONT = Font(bold=True)
+THIN_BORDER = Border(bottom=Side(style="thin", color="DDDDDD"))
 
 
-def esc(s):
-    return html_mod.escape("" if s is None else str(s))
+def _autosize(ws, max_width=60):
+    for col_cells in ws.columns:
+        col = get_column_letter(col_cells[0].column)
+        longest = 0
+        for c in col_cells:
+            v = c.value
+            if v is None:
+                continue
+            s = str(v)
+            longest = max(longest, max((len(line) for line in s.split("\n")), default=0))
+        ws.column_dimensions[col].width = min(max(longest + 2, 10), max_width)
 
 
-def render_ot_section(staff, scheduled, comps_by_user, default_cap, daily_cap, warn_pct, contract_filter):
+def _write_title(ws, title, subtitle=None):
+    ws["A1"] = title
+    ws["A1"].font = TITLE_FONT
+    if subtitle:
+        ws["A2"] = subtitle
+        ws["A2"].font = Font(italic=True, color="555555")
+        ws["A2"].alignment = Alignment(wrap_text=True)
+    return 4 if subtitle else 3  # next free row (1-indexed)
+
+
+def _write_header(ws, row, headers):
+    for col_idx, h in enumerate(headers, start=1):
+        c = ws.cell(row=row, column=col_idx, value=h)
+        c.font = HEADER_FONT
+        c.fill = HEADER_FILL
+        c.border = THIN_BORDER
+        c.alignment = Alignment(horizontal="left")
+    ws.freeze_panes = ws.cell(row=row + 1, column=1)
+
+
+def write_ot_sheet(ws, staff, scheduled, comps_by_user, default_cap, daily_cap, warn_pct, contract_filter):
     rows = []
     skipped_by_filter = 0
     for uid, info in scheduled.items():
@@ -303,7 +342,6 @@ def render_ot_section(staff, scheduled, comps_by_user, default_cap, daily_cap, w
         sched_hours = info["minutes"] / 60.0
         excess_weekly = max(0.0, sched_hours - cap)
         pct = (sched_hours / cap * 100.0) if cap else 0.0
-        # Per-day excess: list days where scheduled hours exceed the daily cap.
         daily_flags = []
         for day, day_min in sorted(info["by_day"].items()):
             day_h = day_min / 60.0
@@ -311,109 +349,92 @@ def render_ot_section(staff, scheduled, comps_by_user, default_cap, daily_cap, w
                 daily_flags.append(f"{day} ({day_h:.2f}h, +{day_h - daily_cap:.2f})")
         if excess_weekly > 0 or daily_flags:
             status = "OVER"
-            css = "row-over"
         elif pct >= warn_pct:
             status = "WARN"
-            css = "row-warn"
         else:
             status = "OK"
-            css = ""
-        projected_ot_cost = f"${excess_weekly * (ot_rate or 0):.2f}" if (excess_weekly > 0 and ot_rate) else "-"
-        rows.append((person, contract, cap, sched_hours, excess_weekly, pct, daily_flags, status, projected_ot_cost, css))
+        projected_ot_cost = excess_weekly * ot_rate if (excess_weekly > 0 and ot_rate) else None
+        rows.append((person, contract or "", cap, sched_hours, excess_weekly,
+                     pct / 100.0, "; ".join(daily_flags), status, projected_ot_cost))
     rows.sort(key=lambda r: (r[7] != "OVER", r[7] != "WARN", -r[4], -r[3]))
 
-    body = "".join(
-        f'<tr class="{css}">'
-        f"<td>{esc(name)}</td>"
-        f"<td>{esc(contract or '-')}</td>"
-        f"<td class='num'>{cap:.1f}</td>"
-        f"<td class='num'>{sched:.2f}</td>"
-        f"<td class='num'>{('+' + format(excess, '.2f')) if excess > 0 else '0.00'}</td>"
-        f"<td class='num'>{pct:.0f}%</td>"
-        f"<td class='muted'>{esc('; '.join(daily_flags)) or '-'}</td>"
-        f"<td><span class='badge {status.lower()}'>{status}</span></td>"
-        f"<td class='num'>{esc(proj_ot)}</td>"
-        f"</tr>"
-        for (name, contract, cap, sched, excess, pct, daily_flags, status, proj_ot, css) in rows
-    ) or "<tr><td colspan='9' class='muted'>No matching staff with shifts for next week.</td></tr>"
-    filter_note = ""
+    subtitle = (f"Singaporean full-time barista standard: 9.5h × 5 days = 47.5h/week. "
+                f"Weekly cap uses compensation.weeklyHours when present, else {default_cap:.1f}h. "
+                f"Daily cap: {daily_cap:.1f}h. Warn at {warn_pct:.0f}% of cap.")
     if contract_filter:
-        filter_note = (f"<p class='muted'>Filter: contractType &isin; {{{esc(', '.join(contract_filter))}}}. "
-                       f"Excluded {skipped_by_filter} other staff with shifts.</p>")
-    return f"""
-<section>
-  <h2>OT Capping Weekly Report &mdash; next week</h2>
-  <p class='muted'>SG full-time barista standard: <strong>9.5h &times; 5 days = 47.5h/week</strong>.
-     Weekly cap uses each staff's <code>compensation.weeklyHours</code> when present, otherwise {default_cap:.1f}h.
-     Daily cap {daily_cap:.1f}h.</p>
-  {filter_note}
-  <table>
-    <thead><tr>
-      <th>Staff</th><th>Contract</th><th>Weekly cap (h)</th><th>Scheduled (h)</th>
-      <th>Excess (h)</th><th>% of cap</th><th>Days &gt; {daily_cap:.1f}h</th>
-      <th>Status</th><th>Projected OT cost</th>
-    </tr></thead>
-    <tbody>{body}</tbody>
-  </table>
-</section>"""
+        subtitle += f"  |  Filter: contractType ∈ {{{', '.join(contract_filter)}}} (excluded {skipped_by_filter})."
+    row = _write_title(ws, "OT Capping Weekly Report — next week", subtitle)
+    headers = ["Staff", "Contract", "Weekly cap (h)", "Scheduled (h)",
+               "Excess (h)", "% of cap", f"Days > {daily_cap:.1f}h", "Status", "Projected OT cost"]
+    _write_header(ws, row, headers)
+
+    if not rows:
+        ws.cell(row=row + 1, column=1, value="No matching staff with shifts for next week.").font = Font(italic=True, color="777777")
+    for i, (name, contract, cap, sched, excess, pct_frac, day_flags, status, proj) in enumerate(rows, start=row + 1):
+        fill = OVER_FILL if status == "OVER" else (WARN_FILL if status == "WARN" else None)
+        values = [name, contract, cap, sched, excess, pct_frac, day_flags, status, proj]
+        for col_idx, v in enumerate(values, start=1):
+            c = ws.cell(row=i, column=col_idx, value=v)
+            if fill:
+                c.fill = fill
+        ws.cell(row=i, column=3).number_format = "0.0"
+        ws.cell(row=i, column=4).number_format = "0.00"
+        ws.cell(row=i, column=5).number_format = "0.00;[Red]+0.00"
+        ws.cell(row=i, column=6).number_format = "0%"
+        ws.cell(row=i, column=9).number_format = '"$"#,##0.00;[Red]"$"#,##0.00'
+        ws.cell(row=i, column=8).font = Font(bold=True,
+                                             color={"OVER": "B3261E", "WARN": "8A6D00", "OK": "137333"}[status])
+    _autosize(ws)
 
 
-def render_shifts_section(staff, scheduled, unassigned):
+def write_shifts_sheet(ws, staff, scheduled, unassigned):
     rows = sorted(
-        ((staff.get(uid, {}).get("name", uid), info["minutes"], info["count"], info["by_day"])
+        ((staff.get(uid, {}).get("name", uid), info["minutes"] / 60.0, info["count"], info["by_day"])
          for uid, info in scheduled.items()),
         key=lambda r: -r[1],
     )
-    body = "".join(
-        f"<tr><td>{esc(name)}</td><td class='num'>{fmt_hours(mins)}</td><td class='num'>{count}</td>"
-        f"<td class='muted'>{esc(', '.join(f'{d}: {fmt_hours(m)}h' for d, m in sorted(by_day.items())))}</td></tr>"
-        for (name, mins, count, by_day) in rows
-    ) or "<tr><td colspan='4' class='muted'>No assigned shifts.</td></tr>"
-    extra = ""
+    subtitle = "Scheduled hours and shift counts for next week."
     if unassigned["count"]:
-        extra = (f"<p class='muted'>Plus <strong>{unassigned['count']}</strong> unassigned slot(s) totalling "
-                 f"<strong>{fmt_hours(unassigned['minutes'])} h</strong>.</p>")
-    return f"""
-<section>
-  <h2>Shifts per staff &mdash; next week</h2>
-  <table>
-    <thead><tr><th>Staff</th><th>Hours</th><th># Shifts</th><th>By day</th></tr></thead>
-    <tbody>{body}</tbody>
-  </table>
-  {extra}
-</section>"""
+        subtitle += (f"  Plus {unassigned['count']} unassigned slot(s) totalling "
+                     f"{unassigned['minutes'] / 60.0:.2f}h (not in table).")
+    row = _write_title(ws, "Shifts per staff — next week", subtitle)
+    _write_header(ws, row, ["Staff", "Hours", "# Shifts", "By day"])
+    if not rows:
+        ws.cell(row=row + 1, column=1, value="No assigned shifts.").font = Font(italic=True, color="777777")
+    for i, (name, hours, count, by_day) in enumerate(rows, start=row + 1):
+        by_day_str = ", ".join(f"{d}: {m / 60.0:.2f}h" for d, m in sorted(by_day.items()))
+        ws.cell(row=i, column=1, value=name)
+        c = ws.cell(row=i, column=2, value=hours); c.number_format = "0.00"
+        ws.cell(row=i, column=3, value=count)
+        ws.cell(row=i, column=4, value=by_day_str).alignment = Alignment(wrap_text=True)
+    _autosize(ws)
 
 
-def render_timesheets_section(staff, actuals, scheduled_prev):
+def write_timesheets_sheet(ws, staff, actuals, scheduled_prev):
     keys = set(actuals) | set(scheduled_prev)
     rows = []
     for uid in keys:
         name = staff.get(uid, {}).get("name", uid)
         sched = scheduled_prev.get(uid, {}).get("minutes", 0.0) / 60.0
         act = actuals.get(uid, {}).get("minutes", 0.0) / 60.0
-        delta = act - sched
         missing = actuals.get(uid, {}).get("missing_clock", 0)
-        rows.append((name, sched, act, delta, missing))
+        rows.append((name, sched, act, act - sched, missing))
     rows.sort(key=lambda r: -abs(r[3]))
-    body = "".join(
-        f"<tr><td>{esc(n)}</td>"
-        f"<td class='num'>{s:.2f}</td>"
-        f"<td class='num'>{a:.2f}</td>"
-        f"<td class='num'>{d:+.2f}</td>"
-        f"<td class='num'>{m or ''}</td></tr>"
-        for (n, s, a, d, m) in rows
-    ) or "<tr><td colspan='5' class='muted'>No timesheet data for prior week.</td></tr>"
-    return f"""
-<section>
-  <h2>Timesheet actuals &mdash; prior week</h2>
-  <table>
-    <thead><tr><th>Staff</th><th>Scheduled (h)</th><th>Clocked (h)</th><th>Delta (h)</th><th>Missing clock</th></tr></thead>
-    <tbody>{body}</tbody>
-  </table>
-</section>"""
+
+    row = _write_title(ws, "Timesheet actuals — prior week", "Scheduled vs clocked hours for the previous Mon–Sun.")
+    _write_header(ws, row, ["Staff", "Scheduled (h)", "Clocked (h)", "Delta (h)", "Missing clock"])
+    if not rows:
+        ws.cell(row=row + 1, column=1, value="No timesheet data for prior week.").font = Font(italic=True, color="777777")
+    for i, (name, sched, act, delta, missing) in enumerate(rows, start=row + 1):
+        ws.cell(row=i, column=1, value=name)
+        ws.cell(row=i, column=2, value=sched).number_format = "0.00"
+        ws.cell(row=i, column=3, value=act).number_format = "0.00"
+        c = ws.cell(row=i, column=4, value=delta); c.number_format = "0.00;[Red]-0.00"
+        ws.cell(row=i, column=5, value=missing or None)
+    _autosize(ws)
 
 
-def render_sales_section(sales, sections):
+def write_sales_sheet(ws, sales, sections):
     rows = []
     grand_target = 0.0
     grand_actual = 0.0
@@ -424,34 +445,39 @@ def render_sales_section(sales, sections):
         totals = det.get("totals", {}) or {}
         target = totals.get("totalTargetSales") or 0
         by_date = det.get("byDate", {}) or {}
-        actual = sum((by_date.get("actualSales") or {}).values()) if isinstance(by_date.get("actualSales"), dict) else 0
-        spl = totals.get("estimatedSalesPerLaborHour")
+        actuals_by_date = by_date.get("actualSales") if isinstance(by_date.get("actualSales"), dict) else {}
+        actual = sum(actuals_by_date.values()) if actuals_by_date else 0
+        spl = totals.get("estimatedSalesPerLaborHour") or 0
         rows.append((name, target, actual, spl))
         grand_target += target or 0
         grand_actual += actual or 0
-    body = "".join(
-        f"<tr><td>{esc(n)}</td><td class='num'>{t:,.2f}</td><td class='num'>{a:,.2f}</td>"
-        f"<td class='num'>{(spl or 0):,.2f}</td></tr>"
-        for (n, t, a, spl) in sorted(rows, key=lambda r: -r[1])
-    ) or "<tr><td colspan='4' class='muted'>No sales data.</td></tr>"
-    footer = (f"<tfoot><tr><th>Total</th><th class='num'>{grand_target:,.2f}</th>"
-              f"<th class='num'>{grand_actual:,.2f}</th><th></th></tr></tfoot>") if rows else ""
-    return f"""
-<section>
-  <h2>Sales totals &mdash; prior week</h2>
-  <table>
-    <thead><tr><th>Section</th><th>Target</th><th>Actual</th><th>Est. $/labor h</th></tr></thead>
-    <tbody>{body}</tbody>
-    {footer}
-  </table>
-</section>"""
+    rows.sort(key=lambda r: -r[1])
+
+    row = _write_title(ws, "Sales totals — prior week", "Per-section target vs actual sales.")
+    _write_header(ws, row, ["Section", "Target", "Actual", "Est. $/labor h"])
+    if not rows:
+        ws.cell(row=row + 1, column=1, value="No sales data.").font = Font(italic=True, color="777777")
+        _autosize(ws)
+        return
+    money_fmt = '#,##0.00'
+    for i, (name, target, actual, spl) in enumerate(rows, start=row + 1):
+        ws.cell(row=i, column=1, value=name)
+        ws.cell(row=i, column=2, value=target).number_format = money_fmt
+        ws.cell(row=i, column=3, value=actual).number_format = money_fmt
+        ws.cell(row=i, column=4, value=spl).number_format = money_fmt
+    total_row = row + 1 + len(rows)
+    ws.cell(row=total_row, column=1, value="Total").font = HEADER_FONT
+    c = ws.cell(row=total_row, column=2, value=grand_target); c.font = HEADER_FONT; c.number_format = money_fmt
+    c = ws.cell(row=total_row, column=3, value=grand_actual); c.font = HEADER_FONT; c.number_format = money_fmt
+    _autosize(ws)
 
 
-def render_leaves_section(staff, day_offs, leaves):
+def write_leaves_sheet(ws, staff, day_offs, leaves):
     rows = []
     for d in day_offs:
         name = staff.get(d.get("userId"), {}).get("name", d.get("userId"))
-        rows.append((d.get("date", ""), name, d.get("dayType", "-"), d.get("hours") or "-", d.get("reason") or "-", "day-off"))
+        rows.append((d.get("date", ""), name, d.get("dayType", "-"),
+                     d.get("hours") or "", d.get("reason") or "", "day-off"))
     for lv in leaves:
         uid = lv.get("staffId") or lv.get("userId")
         name = staff.get(uid, {}).get("name", uid)
@@ -459,74 +485,56 @@ def render_leaves_section(staff, day_offs, leaves):
         end_s = lv.get("endDate") or ""
         span = f"{date_s} → {end_s}" if end_s and end_s != date_s else date_s
         rows.append((span, name, lv.get("leaveTypeName") or lv.get("typeName") or "leave",
-                     lv.get("hours") or lv.get("totalHours") or "-",
-                     lv.get("note") or lv.get("reason") or "-", "leave"))
+                     lv.get("hours") or lv.get("totalHours") or "",
+                     lv.get("note") or lv.get("reason") or "", "leave"))
     rows.sort()
-    body = "".join(
-        f"<tr><td>{esc(d)}</td><td>{esc(n)}</td><td>{esc(t)}</td>"
-        f"<td class='num'>{esc(h)}</td><td>{esc(r)}</td><td class='muted'>{esc(k)}</td></tr>"
-        for (d, n, t, h, r, k) in rows
-    ) or "<tr><td colspan='6' class='muted'>No leaves or day-offs scheduled.</td></tr>"
-    return f"""
-<section>
-  <h2>Leaves &amp; day-offs &mdash; next week</h2>
-  <table>
-    <thead><tr><th>Date</th><th>Staff</th><th>Type</th><th>Hours</th><th>Reason</th><th>Source</th></tr></thead>
-    <tbody>{body}</tbody>
-  </table>
-</section>"""
+
+    row = _write_title(ws, "Leaves & day-offs — next week", "Approved leaves and day-offs falling in next week.")
+    _write_header(ws, row, ["Date", "Staff", "Type", "Hours", "Reason", "Source"])
+    if not rows:
+        ws.cell(row=row + 1, column=1, value="No leaves or day-offs scheduled.").font = Font(italic=True, color="777777")
+    for i, vals in enumerate(rows, start=row + 1):
+        for col_idx, v in enumerate(vals, start=1):
+            ws.cell(row=i, column=col_idx, value=v)
+    _autosize(ws)
 
 
-CSS = """
-:root { color-scheme: light dark; }
-body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-       margin: 2rem auto; max-width: 1100px; padding: 0 1rem; color: #1a1a1a; }
-h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
-h2 { margin-top: 2.25rem; font-size: 1.15rem; border-bottom: 1px solid #ddd; padding-bottom: .3rem; }
-header.meta { color: #555; margin-bottom: 1rem; }
-table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
-th, td { padding: .45rem .6rem; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
-th { background: #f7f7f8; font-weight: 600; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
-.muted { color: #777; font-size: 0.9em; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
-.badge.ok   { background: #e6f4ea; color: #137333; }
-.badge.warn { background: #fff4ce; color: #8a6d00; }
-.badge.over { background: #fde2e1; color: #b3261e; }
-.row-over td { background: #fff5f4; }
-.row-warn td { background: #fffbe6; }
-@media (prefers-color-scheme: dark) {
-  body { color: #eee; background: #111; }
-  th { background: #1d1d1f; }
-  th, td { border-color: #2a2a2a; }
-  .muted { color: #999; }
-  .row-over td { background: #2a1414; }
-  .row-warn td { background: #2a2410; }
-}
-"""
+def write_summary_sheet(ws, meta):
+    ws["A1"] = meta["title"]; ws["A1"].font = TITLE_FONT
+    items = [
+        ("Week", meta["week_label"]),
+        ("Organisation", meta["org"]),
+        ("Generated", meta["generated_at"]),
+        ("Weekly cap (fallback)", f"{meta['default_cap']:.1f} h"),
+        ("Daily cap", f"{meta['daily_cap']:.1f} h"),
+        ("Warn threshold", f"{meta['warn_pct']:.0f}% of cap"),
+        ("Contract filter", meta.get("contract_filter") or "(all)"),
+    ]
+    for i, (k, v) in enumerate(items, start=3):
+        ws.cell(row=i, column=1, value=k).font = HEADER_FONT
+        ws.cell(row=i, column=2, value=v)
+    ws.cell(row=3 + len(items) + 1, column=1,
+            value="Standard for SG full-time baristas: 9.5h × 5 days = 47.5h/week. "
+                  "Entries with Total Hours Worked > 47.5 are flagged as excess overtime "
+                  "(red rows on the OT Capping sheet). Days scheduled above the daily cap "
+                  "are listed in the 'Days > 9.5h' column.").alignment = Alignment(wrap_text=True)
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 60
 
 
-def render(meta, sections_html):
-    return f"""<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<title>{esc(meta['title'])}</title>
-<style>{CSS}</style>
-</head><body>
-<header class="meta">
-  <h1>{esc(meta['title'])}</h1>
-  <div>Week of <strong>{esc(meta['week_label'])}</strong> &middot;
-       Generated {esc(meta['generated_at'])} &middot;
-       Org: <strong>{esc(meta['org'])}</strong></div>
-</header>
-{''.join(sections_html)}
-<footer class="muted" style="margin-top:2rem">
-  <p>SG full-time barista standard: 9.5h &times; 5 days = 47.5h/week.
-     Weekly cap source: per-staff <code>compensation.weeklyHours</code> when set; fallback {meta['default_cap']:.1f}h.
-     Daily cap: {meta['daily_cap']:.1f}h. Warn at {meta['warn_pct']:.0f}% of weekly cap.</p>
-</footer>
-</body></html>
-"""
+def build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
+                   actuals_prev, scheduled_prev, sales_prev, sections,
+                   day_offs_next, leaves_next, args):
+    wb = Workbook()
+    wb.remove(wb.active)
+    write_summary_sheet(wb.create_sheet("Summary"), meta)
+    write_ot_sheet(wb.create_sheet("OT Capping"), staff, scheduled_next, comps_by_user,
+                   args.ot_cap, args.daily_cap, args.ot_warn_pct, args.contract_filter)
+    write_shifts_sheet(wb.create_sheet("Shifts"), staff, scheduled_next, unassigned_next)
+    write_timesheets_sheet(wb.create_sheet("Timesheets"), staff, actuals_prev, scheduled_prev)
+    write_sales_sheet(wb.create_sheet("Sales"), sales_prev, sections)
+    write_leaves_sheet(wb.create_sheet("Leaves"), staff, day_offs_next, leaves_next)
+    return wb
 
 
 # ---------- Main ----------
@@ -559,15 +567,6 @@ def main():
     actuals_prev = per_user_actuals(ts_prev)
     comps_by_user = latest_compensation_per_user(comps)
 
-    sections_html = [
-        render_ot_section(staff, scheduled_next, comps_by_user,
-                          args.ot_cap, args.daily_cap, args.ot_warn_pct, args.contract_filter),
-        render_shifts_section(staff, scheduled_next, unassigned_next),
-        render_timesheets_section(staff, actuals_prev, scheduled_prev),
-        render_sales_section(sales_prev, sections),
-        render_leaves_section(staff, day_offs_next, leaves_next),
-    ]
-
     week_label = f"{next_from.date().isoformat()} – {(next_to.date() - timedelta(days=1)).isoformat()}"
     meta = {
         "title": f"StaffAny Weekly Report — {week_label}",
@@ -577,12 +576,14 @@ def main():
         "default_cap": args.ot_cap,
         "daily_cap": args.daily_cap,
         "warn_pct": args.ot_warn_pct,
+        "contract_filter": ", ".join(args.contract_filter) if args.contract_filter else None,
     }
-    html_out = render(meta, sections_html)
 
-    with open(args.output, "w", encoding="utf-8") as f:
-        f.write(html_out)
-    print(f"Wrote {args.output} ({len(html_out):,} bytes)")
+    wb = build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
+                        actuals_prev, scheduled_prev, sales_prev, sections,
+                        day_offs_next, leaves_next, args)
+    wb.save(args.output)
+    print(f"Wrote {args.output}")
 
 
 if __name__ == "__main__":
