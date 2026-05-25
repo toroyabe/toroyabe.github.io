@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StaffAny API console</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 960px; padding: 0 1rem; }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+  .sub { color: #888; margin-bottom: 1.25rem; }
+  .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .5rem 0; }
+  input[type=password], input[type=text] { flex: 1; min-width: 260px; padding: .5rem .6rem; font: inherit; border: 1px solid #8884; border-radius: 6px; background: transparent; color: inherit; }
+  button { padding: .5rem .8rem; font: inherit; border: 1px solid #8884; border-radius: 6px; background: #8881; color: inherit; cursor: pointer; }
+  button:hover { background: #8883; }
+  button.primary { background: #2563eb; color: white; border-color: #2563eb; }
+  #endpoints { display: flex; flex-wrap: wrap; gap: .35rem; margin: .75rem 0; }
+  #endpoints button { font-size: 12px; padding: .3rem .55rem; }
+  .meta { font-size: 12px; color: #888; }
+  pre { background: #8881; border: 1px solid #8882; border-radius: 6px; padding: .75rem; overflow: auto; max-height: 70vh; white-space: pre-wrap; word-break: break-word; }
+  .ok { color: #16a34a; } .err { color: #dc2626; }
+</style>
+</head>
+<body>
+  <h1>StaffAny API console</h1>
+  <div class="sub">Calls <code>https://api.staffany.com</code> directly from your browser. Your token is kept in <code>localStorage</code> on this device only — it is never sent anywhere except StaffAny.</div>
+
+  <div class="row">
+    <input id="token" type="password" placeholder="Bearer token" autocomplete="off" />
+    <button id="save">Save</button>
+    <button id="clear">Clear</button>
+  </div>
+
+  <div class="row">
+    <input id="path" type="text" placeholder="/workspace/v2/me" />
+    <button id="go" class="primary">GET</button>
+  </div>
+
+  <div id="endpoints"></div>
+
+  <div class="row meta">
+    <span id="status">idle</span>
+    <span id="timing"></span>
+  </div>
+  <pre id="out">Paste your StaffAny bearer token above, then click an endpoint or hit GET.</pre>
+
+<script>
+const API = "https://api.staffany.com";
+const TOKEN_KEY = "staffany.token";
+
+const $ = (id) => document.getElementById(id);
+const tokenEl = $("token"), pathEl = $("path"), outEl = $("out"),
+      statusEl = $("status"), timingEl = $("timing");
+
+tokenEl.value = localStorage.getItem(TOKEN_KEY) || "";
+pathEl.value = "/workspace/v2/me";
+
+$("save").onclick = () => {
+  localStorage.setItem(TOKEN_KEY, tokenEl.value.trim());
+  statusEl.textContent = "token saved"; statusEl.className = "ok";
+};
+$("clear").onclick = () => {
+  localStorage.removeItem(TOKEN_KEY); tokenEl.value = "";
+  statusEl.textContent = "token cleared"; statusEl.className = "";
+};
+
+const endpoints = [
+  "/workspace/v2/me",
+  "/workspace/v2/roles",
+  "/workspace/v2/sections",
+  "/workspace/v2/sales",
+  "/workspace/v1/groups",
+  "/workspace/v1/staff",
+  "/workspace/v1/roles",
+  "/workspace/v1/sections",
+  "/workspace/v1/sales",
+  "/workspace/v1/me",
+];
+const epWrap = $("endpoints");
+for (const p of endpoints) {
+  const b = document.createElement("button");
+  b.textContent = p;
+  b.onclick = () => { pathEl.value = p; doFetch(); };
+  epWrap.appendChild(b);
+}
+
+async function doFetch() {
+  const token = tokenEl.value.trim();
+  const path = pathEl.value.trim() || "/";
+  if (!token) {
+    statusEl.textContent = "no token"; statusEl.className = "err";
+    outEl.textContent = "Enter a bearer token first.";
+    return;
+  }
+  statusEl.textContent = "fetching " + path + " ..."; statusEl.className = "";
+  timingEl.textContent = "";
+  const t0 = performance.now();
+  try {
+    const res = await fetch(API + path, {
+      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+    });
+    const dt = (performance.now() - t0).toFixed(0);
+    timingEl.textContent = dt + " ms";
+    statusEl.textContent = "HTTP " + res.status + " " + res.statusText;
+    statusEl.className = res.ok ? "ok" : "err";
+    const text = await res.text();
+    try { outEl.textContent = JSON.stringify(JSON.parse(text), null, 2); }
+    catch { outEl.textContent = text; }
+  } catch (e) {
+    statusEl.textContent = "network error"; statusEl.className = "err";
+    outEl.textContent = String(e);
+  }
+}
+$("go").onclick = doFetch;
+pathEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doFetch(); });
+</script>
+</body>
+</html>
