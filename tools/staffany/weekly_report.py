@@ -294,40 +294,43 @@ HEADER_FONT = Font(bold=True)
 THIN_BORDER = Border(bottom=Side(style="thin", color="DDDDDD"))
 
 
-def _autosize(ws, max_width=60):
-    for col_cells in ws.columns:
-        col = get_column_letter(col_cells[0].column)
+def _autosize_columns(ws, used_cols, max_width=60):
+    for col_idx in used_cols:
+        col = get_column_letter(col_idx)
         longest = 0
-        for c in col_cells:
-            v = c.value
+        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx):
+            v = row[0].value
             if v is None:
                 continue
-            s = str(v)
-            longest = max(longest, max((len(line) for line in s.split("\n")), default=0))
+            for line in str(v).split("\n"):
+                longest = max(longest, len(line))
         ws.column_dimensions[col].width = min(max(longest + 2, 10), max_width)
 
 
-def _write_title(ws, title, subtitle=None):
-    ws["A1"] = title
-    ws["A1"].font = TITLE_FONT
+def _section_heading(ws, row, text, subtitle=None):
+    c = ws.cell(row=row, column=1, value=text)
+    c.font = Font(bold=True, size=12, color="1A1A1A")
+    next_row = row + 1
     if subtitle:
-        ws["A2"] = subtitle
-        ws["A2"].font = Font(italic=True, color="555555")
-        ws["A2"].alignment = Alignment(wrap_text=True)
-    return 4 if subtitle else 3  # next free row (1-indexed)
+        s = ws.cell(row=next_row, column=1, value=subtitle)
+        s.font = Font(italic=True, color="555555", size=10)
+        s.alignment = Alignment(wrap_text=True)
+        next_row += 1
+    return next_row
 
 
-def _write_header(ws, row, headers):
+def _table_header(ws, row, headers):
     for col_idx, h in enumerate(headers, start=1):
         c = ws.cell(row=row, column=col_idx, value=h)
         c.font = HEADER_FONT
         c.fill = HEADER_FILL
         c.border = THIN_BORDER
         c.alignment = Alignment(horizontal="left")
-    ws.freeze_panes = ws.cell(row=row + 1, column=1)
+    return row + 1
 
 
-def write_ot_sheet(ws, staff, scheduled, comps_by_user, default_cap, daily_cap, warn_pct, contract_filter):
+def write_ot_section(ws, start_row, staff, scheduled, comps_by_user,
+                     default_cap, daily_cap, warn_pct, contract_filter):
     rows = []
     skipped_by_filter = 0
     for uid, info in scheduled.items():
@@ -358,36 +361,38 @@ def write_ot_sheet(ws, staff, scheduled, comps_by_user, default_cap, daily_cap, 
                      pct / 100.0, "; ".join(daily_flags), status, projected_ot_cost))
     rows.sort(key=lambda r: (r[7] != "OVER", r[7] != "WARN", -r[4], -r[3]))
 
-    subtitle = (f"Singaporean full-time barista standard: 9.5h × 5 days = 47.5h/week. "
-                f"Weekly cap uses compensation.weeklyHours when present, else {default_cap:.1f}h. "
+    subtitle = (f"SG full-time barista standard: 9.5h × 5 days = 47.5h/week. "
+                f"Cap uses compensation.weeklyHours when present, else {default_cap:.1f}h. "
                 f"Daily cap: {daily_cap:.1f}h. Warn at {warn_pct:.0f}% of cap.")
     if contract_filter:
         subtitle += f"  |  Filter: contractType ∈ {{{', '.join(contract_filter)}}} (excluded {skipped_by_filter})."
-    row = _write_title(ws, "OT Capping Weekly Report — next week", subtitle)
+    row = _section_heading(ws, start_row, "OT Capping Weekly Report — next week", subtitle)
     headers = ["Staff", "Contract", "Weekly cap (h)", "Scheduled (h)",
                "Excess (h)", "% of cap", f"Days > {daily_cap:.1f}h", "Status", "Projected OT cost"]
-    _write_header(ws, row, headers)
+    row = _table_header(ws, row, headers)
 
     if not rows:
-        ws.cell(row=row + 1, column=1, value="No matching staff with shifts for next week.").font = Font(italic=True, color="777777")
-    for i, (name, contract, cap, sched, excess, pct_frac, day_flags, status, proj) in enumerate(rows, start=row + 1):
+        ws.cell(row=row, column=1, value="No matching staff with shifts for next week.").font = Font(italic=True, color="777777")
+        return row + 1
+    for (name, contract, cap, sched, excess, pct_frac, day_flags, status, proj) in rows:
         fill = OVER_FILL if status == "OVER" else (WARN_FILL if status == "WARN" else None)
         values = [name, contract, cap, sched, excess, pct_frac, day_flags, status, proj]
         for col_idx, v in enumerate(values, start=1):
-            c = ws.cell(row=i, column=col_idx, value=v)
+            c = ws.cell(row=row, column=col_idx, value=v)
             if fill:
                 c.fill = fill
-        ws.cell(row=i, column=3).number_format = "0.0"
-        ws.cell(row=i, column=4).number_format = "0.00"
-        ws.cell(row=i, column=5).number_format = "0.00;[Red]+0.00"
-        ws.cell(row=i, column=6).number_format = "0%"
-        ws.cell(row=i, column=9).number_format = '"$"#,##0.00;[Red]"$"#,##0.00'
-        ws.cell(row=i, column=8).font = Font(bold=True,
-                                             color={"OVER": "B3261E", "WARN": "8A6D00", "OK": "137333"}[status])
-    _autosize(ws)
+        ws.cell(row=row, column=3).number_format = "0.0"
+        ws.cell(row=row, column=4).number_format = "0.00"
+        ws.cell(row=row, column=5).number_format = "0.00;[Red]+0.00"
+        ws.cell(row=row, column=6).number_format = "0%"
+        ws.cell(row=row, column=9).number_format = '"$"#,##0.00;[Red]"$"#,##0.00'
+        ws.cell(row=row, column=8).font = Font(bold=True,
+            color={"OVER": "B3261E", "WARN": "8A6D00", "OK": "137333"}[status])
+        row += 1
+    return row
 
 
-def write_shifts_sheet(ws, staff, scheduled, unassigned):
+def write_shifts_section(ws, start_row, staff, scheduled, unassigned):
     rows = sorted(
         ((staff.get(uid, {}).get("name", uid), info["minutes"] / 60.0, info["count"], info["by_day"])
          for uid, info in scheduled.items()),
@@ -397,20 +402,22 @@ def write_shifts_sheet(ws, staff, scheduled, unassigned):
     if unassigned["count"]:
         subtitle += (f"  Plus {unassigned['count']} unassigned slot(s) totalling "
                      f"{unassigned['minutes'] / 60.0:.2f}h (not in table).")
-    row = _write_title(ws, "Shifts per staff — next week", subtitle)
-    _write_header(ws, row, ["Staff", "Hours", "# Shifts", "By day"])
+    row = _section_heading(ws, start_row, "Shifts per staff — next week", subtitle)
+    row = _table_header(ws, row, ["Staff", "Hours", "# Shifts", "By day"])
     if not rows:
-        ws.cell(row=row + 1, column=1, value="No assigned shifts.").font = Font(italic=True, color="777777")
-    for i, (name, hours, count, by_day) in enumerate(rows, start=row + 1):
+        ws.cell(row=row, column=1, value="No assigned shifts.").font = Font(italic=True, color="777777")
+        return row + 1
+    for (name, hours, count, by_day) in rows:
         by_day_str = ", ".join(f"{d}: {m / 60.0:.2f}h" for d, m in sorted(by_day.items()))
-        ws.cell(row=i, column=1, value=name)
-        c = ws.cell(row=i, column=2, value=hours); c.number_format = "0.00"
-        ws.cell(row=i, column=3, value=count)
-        ws.cell(row=i, column=4, value=by_day_str).alignment = Alignment(wrap_text=True)
-    _autosize(ws)
+        ws.cell(row=row, column=1, value=name)
+        ws.cell(row=row, column=2, value=hours).number_format = "0.00"
+        ws.cell(row=row, column=3, value=count)
+        ws.cell(row=row, column=4, value=by_day_str).alignment = Alignment(wrap_text=True)
+        row += 1
+    return row
 
 
-def write_timesheets_sheet(ws, staff, actuals, scheduled_prev):
+def write_timesheets_section(ws, start_row, staff, actuals, scheduled_prev):
     keys = set(actuals) | set(scheduled_prev)
     rows = []
     for uid in keys:
@@ -421,20 +428,23 @@ def write_timesheets_sheet(ws, staff, actuals, scheduled_prev):
         rows.append((name, sched, act, act - sched, missing))
     rows.sort(key=lambda r: -abs(r[3]))
 
-    row = _write_title(ws, "Timesheet actuals — prior week", "Scheduled vs clocked hours for the previous Mon–Sun.")
-    _write_header(ws, row, ["Staff", "Scheduled (h)", "Clocked (h)", "Delta (h)", "Missing clock"])
+    row = _section_heading(ws, start_row, "Timesheet actuals — prior week",
+                            "Scheduled vs clocked hours for the previous Mon–Sun.")
+    row = _table_header(ws, row, ["Staff", "Scheduled (h)", "Clocked (h)", "Delta (h)", "Missing clock"])
     if not rows:
-        ws.cell(row=row + 1, column=1, value="No timesheet data for prior week.").font = Font(italic=True, color="777777")
-    for i, (name, sched, act, delta, missing) in enumerate(rows, start=row + 1):
-        ws.cell(row=i, column=1, value=name)
-        ws.cell(row=i, column=2, value=sched).number_format = "0.00"
-        ws.cell(row=i, column=3, value=act).number_format = "0.00"
-        c = ws.cell(row=i, column=4, value=delta); c.number_format = "0.00;[Red]-0.00"
-        ws.cell(row=i, column=5, value=missing or None)
-    _autosize(ws)
+        ws.cell(row=row, column=1, value="No timesheet data for prior week.").font = Font(italic=True, color="777777")
+        return row + 1
+    for (name, sched, act, delta, missing) in rows:
+        ws.cell(row=row, column=1, value=name)
+        ws.cell(row=row, column=2, value=sched).number_format = "0.00"
+        ws.cell(row=row, column=3, value=act).number_format = "0.00"
+        ws.cell(row=row, column=4, value=delta).number_format = "0.00;[Red]-0.00"
+        ws.cell(row=row, column=5, value=missing or None)
+        row += 1
+    return row
 
 
-def write_sales_sheet(ws, sales, sections):
+def write_sales_section(ws, start_row, sales, sections):
     rows = []
     grand_target = 0.0
     grand_actual = 0.0
@@ -453,26 +463,25 @@ def write_sales_sheet(ws, sales, sections):
         grand_actual += actual or 0
     rows.sort(key=lambda r: -r[1])
 
-    row = _write_title(ws, "Sales totals — prior week", "Per-section target vs actual sales.")
-    _write_header(ws, row, ["Section", "Target", "Actual", "Est. $/labor h"])
+    row = _section_heading(ws, start_row, "Sales totals — prior week", "Per-section target vs actual sales.")
+    row = _table_header(ws, row, ["Section", "Target", "Actual", "Est. $/labor h"])
     if not rows:
-        ws.cell(row=row + 1, column=1, value="No sales data.").font = Font(italic=True, color="777777")
-        _autosize(ws)
-        return
+        ws.cell(row=row, column=1, value="No sales data.").font = Font(italic=True, color="777777")
+        return row + 1
     money_fmt = '#,##0.00'
-    for i, (name, target, actual, spl) in enumerate(rows, start=row + 1):
-        ws.cell(row=i, column=1, value=name)
-        ws.cell(row=i, column=2, value=target).number_format = money_fmt
-        ws.cell(row=i, column=3, value=actual).number_format = money_fmt
-        ws.cell(row=i, column=4, value=spl).number_format = money_fmt
-    total_row = row + 1 + len(rows)
-    ws.cell(row=total_row, column=1, value="Total").font = HEADER_FONT
-    c = ws.cell(row=total_row, column=2, value=grand_target); c.font = HEADER_FONT; c.number_format = money_fmt
-    c = ws.cell(row=total_row, column=3, value=grand_actual); c.font = HEADER_FONT; c.number_format = money_fmt
-    _autosize(ws)
+    for (name, target, actual, spl) in rows:
+        ws.cell(row=row, column=1, value=name)
+        ws.cell(row=row, column=2, value=target).number_format = money_fmt
+        ws.cell(row=row, column=3, value=actual).number_format = money_fmt
+        ws.cell(row=row, column=4, value=spl).number_format = money_fmt
+        row += 1
+    ws.cell(row=row, column=1, value="Total").font = HEADER_FONT
+    c = ws.cell(row=row, column=2, value=grand_target); c.font = HEADER_FONT; c.number_format = money_fmt
+    c = ws.cell(row=row, column=3, value=grand_actual); c.font = HEADER_FONT; c.number_format = money_fmt
+    return row + 1
 
 
-def write_leaves_sheet(ws, staff, day_offs, leaves):
+def write_leaves_section(ws, start_row, staff, day_offs, leaves):
     rows = []
     for d in day_offs:
         name = staff.get(d.get("userId"), {}).get("name", d.get("userId"))
@@ -489,51 +498,53 @@ def write_leaves_sheet(ws, staff, day_offs, leaves):
                      lv.get("note") or lv.get("reason") or "", "leave"))
     rows.sort()
 
-    row = _write_title(ws, "Leaves & day-offs — next week", "Approved leaves and day-offs falling in next week.")
-    _write_header(ws, row, ["Date", "Staff", "Type", "Hours", "Reason", "Source"])
+    row = _section_heading(ws, start_row, "Leaves & day-offs — next week",
+                            "Approved leaves and day-offs falling in next week.")
+    row = _table_header(ws, row, ["Date", "Staff", "Type", "Hours", "Reason", "Source"])
     if not rows:
-        ws.cell(row=row + 1, column=1, value="No leaves or day-offs scheduled.").font = Font(italic=True, color="777777")
-    for i, vals in enumerate(rows, start=row + 1):
+        ws.cell(row=row, column=1, value="No leaves or day-offs scheduled.").font = Font(italic=True, color="777777")
+        return row + 1
+    for vals in rows:
         for col_idx, v in enumerate(vals, start=1):
-            ws.cell(row=i, column=col_idx, value=v)
-    _autosize(ws)
+            ws.cell(row=row, column=col_idx, value=v)
+        row += 1
+    return row
 
 
-def write_summary_sheet(ws, meta):
-    ws["A1"] = meta["title"]; ws["A1"].font = TITLE_FONT
-    items = [
-        ("Week", meta["week_label"]),
-        ("Organisation", meta["org"]),
-        ("Generated", meta["generated_at"]),
-        ("Weekly cap (fallback)", f"{meta['default_cap']:.1f} h"),
-        ("Daily cap", f"{meta['daily_cap']:.1f} h"),
-        ("Warn threshold", f"{meta['warn_pct']:.0f}% of cap"),
-        ("Contract filter", meta.get("contract_filter") or "(all)"),
-    ]
-    for i, (k, v) in enumerate(items, start=3):
-        ws.cell(row=i, column=1, value=k).font = HEADER_FONT
-        ws.cell(row=i, column=2, value=v)
-    ws.cell(row=3 + len(items) + 1, column=1,
-            value="Standard for SG full-time baristas: 9.5h × 5 days = 47.5h/week. "
-                  "Entries with Total Hours Worked > 47.5 are flagged as excess overtime "
-                  "(red rows on the OT Capping sheet). Days scheduled above the daily cap "
-                  "are listed in the 'Days > 9.5h' column.").alignment = Alignment(wrap_text=True)
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 60
+def write_header_block(ws, meta):
+    ws["A1"] = meta["title"]
+    ws["A1"].font = TITLE_FONT
+    info = (f"Week: {meta['week_label']}   |   Org: {meta['org']}   |   "
+            f"Generated: {meta['generated_at']}   |   "
+            f"Cap fallback {meta['default_cap']:.1f}h weekly / {meta['daily_cap']:.1f}h daily   |   "
+            f"Warn {meta['warn_pct']:.0f}% of cap"
+            + (f"   |   Filter: {meta['contract_filter']}" if meta.get('contract_filter') else ""))
+    ws["A2"] = info
+    ws["A2"].font = Font(italic=True, color="555555", size=10)
+    ws["A2"].alignment = Alignment(wrap_text=True)
+    return 4  # leave row 3 blank before first section
 
 
 def build_workbook(meta, staff, scheduled_next, unassigned_next, comps_by_user,
                    actuals_prev, scheduled_prev, sales_prev, sections,
                    day_offs_next, leaves_next, args):
     wb = Workbook()
-    wb.remove(wb.active)
-    write_summary_sheet(wb.create_sheet("Summary"), meta)
-    write_ot_sheet(wb.create_sheet("OT Capping"), staff, scheduled_next, comps_by_user,
-                   args.ot_cap, args.daily_cap, args.ot_warn_pct, args.contract_filter)
-    write_shifts_sheet(wb.create_sheet("Shifts"), staff, scheduled_next, unassigned_next)
-    write_timesheets_sheet(wb.create_sheet("Timesheets"), staff, actuals_prev, scheduled_prev)
-    write_sales_sheet(wb.create_sheet("Sales"), sales_prev, sections)
-    write_leaves_sheet(wb.create_sheet("Leaves"), staff, day_offs_next, leaves_next)
+    ws = wb.active
+    # Sheet name: the week (Excel caps tab names at 31 chars)
+    ws.title = meta["week_label"][:31]
+
+    row = write_header_block(ws, meta)
+    row = write_ot_section(ws, row, staff, scheduled_next, comps_by_user,
+                           args.ot_cap, args.daily_cap, args.ot_warn_pct, args.contract_filter)
+    row = write_shifts_section(ws, row + 1, staff, scheduled_next, unassigned_next)
+    row = write_timesheets_section(ws, row + 1, staff, actuals_prev, scheduled_prev)
+    row = write_sales_section(ws, row + 1, sales_prev, sections)
+    row = write_leaves_section(ws, row + 1, staff, day_offs_next, leaves_next)
+
+    # Column widths: the OT section is the widest (9 cols). Size all touched columns.
+    _autosize_columns(ws, used_cols=range(1, 10))
+    # Freeze the title rows so they stay visible while scrolling.
+    ws.freeze_panes = "A3"
     return wb
 
 
