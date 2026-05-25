@@ -5,114 +5,224 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>StaffAny API console</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 960px; padding: 0 1rem; }
-  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
-  .sub { color: #888; margin-bottom: 1.25rem; }
-  .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .5rem 0; }
-  input[type=password], input[type=text] { flex: 1; min-width: 260px; padding: .5rem .6rem; font: inherit; border: 1px solid #8884; border-radius: 6px; background: transparent; color: inherit; }
-  button { padding: .5rem .8rem; font: inherit; border: 1px solid #8884; border-radius: 6px; background: #8881; color: inherit; cursor: pointer; }
+  :root { color-scheme: light dark; --b: #8884; --bg: #8881; }
+  body { font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 1.5rem auto; max-width: 1100px; padding: 0 1rem; }
+  h1 { margin: 0 0 .25rem; font-size: 1.35rem; }
+  .sub { color: #888; margin-bottom: 1rem; }
+  .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .4rem 0; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input[type=password], input[type=text] { flex: 1; min-width: 220px; padding: .45rem .6rem; border: 1px solid var(--b); border-radius: 6px; background: transparent; }
+  select { padding: .45rem .55rem; border: 1px solid var(--b); border-radius: 6px; background: transparent; }
+  textarea { width: 100%; min-height: 110px; padding: .55rem; border: 1px solid var(--b); border-radius: 6px; background: transparent; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; box-sizing: border-box; }
+  button { padding: .45rem .75rem; border: 1px solid var(--b); border-radius: 6px; background: var(--bg); cursor: pointer; }
   button:hover { background: #8883; }
-  button.primary { background: #2563eb; color: white; border-color: #2563eb; }
-  #endpoints { display: flex; flex-wrap: wrap; gap: .35rem; margin: .75rem 0; }
-  #endpoints button { font-size: 12px; padding: .3rem .55rem; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; margin-top: 1rem; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+  #ops { border: 1px solid var(--b); border-radius: 8px; max-height: 70vh; overflow: auto; padding: .25rem; }
+  .op { display: flex; align-items: baseline; gap: .4rem; padding: .35rem .5rem; border-radius: 5px; cursor: pointer; font-size: 12px; }
+  .op:hover { background: var(--bg); }
+  .op.active { background: #2563eb33; }
+  .m { font-weight: 700; font-size: 10.5px; padding: 1px 5px; border-radius: 4px; min-width: 44px; text-align: center; color: #fff; }
+  .m.GET    { background: #16a34a; }
+  .m.POST   { background: #2563eb; }
+  .m.DELETE { background: #dc2626; }
+  .m.PATCH  { background: #d97706; }
+  .op .p { font-family: ui-monospace, Menlo, monospace; }
+  .op .s { color: #888; font-size: 11px; margin-left: .25rem; }
+  .params { display: grid; grid-template-columns: max-content 1fr max-content; gap: .35rem .6rem; align-items: center; margin: .35rem 0; }
+  .params .lbl { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .params .req { color: #dc2626; font-size: 11px; }
+  .params .opt { color: #888; font-size: 11px; }
+  .params input { padding: .3rem .45rem; }
+  .summary { color: #888; font-size: 12.5px; margin: .25rem 0 .5rem; }
   .meta { font-size: 12px; color: #888; }
-  pre { background: #8881; border: 1px solid #8882; border-radius: 6px; padding: .75rem; overflow: auto; max-height: 70vh; white-space: pre-wrap; word-break: break-word; }
+  pre { background: var(--bg); border: 1px solid var(--b); border-radius: 6px; padding: .65rem; overflow: auto; max-height: 60vh; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
   .ok { color: #16a34a; } .err { color: #dc2626; }
+  details { border: 1px solid var(--b); border-radius: 6px; padding: .35rem .55rem; margin: .35rem 0; }
+  summary { cursor: pointer; font-size: 12px; color: #888; }
 </style>
 </head>
 <body>
   <h1>StaffAny API console</h1>
-  <div class="sub">Calls <code>https://api.staffany.com</code> directly from your browser. Your token is kept in <code>localStorage</code> on this device only — it is never sent anywhere except StaffAny.</div>
+  <div class="sub">Calls <code>https://api.staffany.com</code> directly from your browser using the OpenAPI spec bundled with this page. Your bearer token stays in <code>localStorage</code> on this device — it is sent only to StaffAny.</div>
 
   <div class="row">
     <input id="token" type="password" placeholder="Bearer token" autocomplete="off" />
     <button id="save">Save</button>
     <button id="clear">Clear</button>
+    <span id="status" class="meta">idle</span>
   </div>
 
-  <div class="row">
-    <input id="path" type="text" placeholder="/workspace/v2/me" />
-    <button id="go" class="primary">GET</button>
-  </div>
+  <div class="layout">
+    <div id="ops" aria-label="Endpoints"></div>
+    <div>
+      <div id="opHeader" class="row">
+        <span class="m" id="method">GET</span>
+        <code id="pathTpl">select an endpoint</code>
+      </div>
+      <div class="summary" id="summary"></div>
 
-  <div id="endpoints"></div>
+      <div id="paramsBox" class="params"></div>
 
-  <div class="row meta">
-    <span id="status">idle</span>
-    <span id="timing"></span>
+      <details id="bodyBox" style="display:none">
+        <summary>Request body (JSON)</summary>
+        <textarea id="body" placeholder="{}"></textarea>
+      </details>
+
+      <div class="row">
+        <button id="go" class="primary">Send</button>
+        <span id="timing" class="meta"></span>
+        <span id="resStatus" class="meta"></span>
+      </div>
+
+      <pre id="out">Select an endpoint on the left.</pre>
+    </div>
   </div>
-  <pre id="out">Paste your StaffAny bearer token above, then click an endpoint or hit GET.</pre>
 
 <script>
 const API = "https://api.staffany.com";
 const TOKEN_KEY = "staffany.token";
-
 const $ = (id) => document.getElementById(id);
-const tokenEl = $("token"), pathEl = $("path"), outEl = $("out"),
-      statusEl = $("status"), timingEl = $("timing");
 
+const tokenEl = $("token");
 tokenEl.value = localStorage.getItem(TOKEN_KEY) || "";
-pathEl.value = "/workspace/v2/me";
+$("save").onclick = () => { localStorage.setItem(TOKEN_KEY, tokenEl.value.trim()); flash("token saved", "ok"); };
+$("clear").onclick = () => { localStorage.removeItem(TOKEN_KEY); tokenEl.value = ""; flash("token cleared"); };
 
-$("save").onclick = () => {
-  localStorage.setItem(TOKEN_KEY, tokenEl.value.trim());
-  statusEl.textContent = "token saved"; statusEl.className = "ok";
-};
-$("clear").onclick = () => {
-  localStorage.removeItem(TOKEN_KEY); tokenEl.value = "";
-  statusEl.textContent = "token cleared"; statusEl.className = "";
-};
+function flash(text, cls = "") { const s = $("status"); s.textContent = text; s.className = "meta " + cls; }
 
-const endpoints = [
-  "/workspace/v2/me",
-  "/workspace/v2/roles",
-  "/workspace/v2/sections",
-  "/workspace/v2/sales",
-  "/workspace/v1/groups",
-  "/workspace/v1/staff",
-  "/workspace/v1/roles",
-  "/workspace/v1/sections",
-  "/workspace/v1/sales",
-  "/workspace/v1/me",
-];
-const epWrap = $("endpoints");
-for (const p of endpoints) {
-  const b = document.createElement("button");
-  b.textContent = p;
-  b.onclick = () => { pathEl.value = p; doFetch(); };
-  epWrap.appendChild(b);
+let current = null; // { method, path, op }
+
+async function loadSpec() {
+  const res = await fetch("openapi.json", { cache: "no-cache" });
+  if (!res.ok) throw new Error("failed to load openapi.json: " + res.status);
+  return res.json();
 }
 
-async function doFetch() {
-  const token = tokenEl.value.trim();
-  const path = pathEl.value.trim() || "/";
-  if (!token) {
-    statusEl.textContent = "no token"; statusEl.className = "err";
-    outEl.textContent = "Enter a bearer token first.";
+function renderOps(spec) {
+  const list = $("ops"); list.innerHTML = "";
+  const entries = [];
+  for (const [path, ops] of Object.entries(spec.paths || {})) {
+    for (const [method, op] of Object.entries(ops)) {
+      if (!["get","post","delete","patch","put"].includes(method)) continue;
+      entries.push({ method: method.toUpperCase(), path, op });
+    }
+  }
+  entries.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+  for (const e of entries) {
+    const div = document.createElement("div");
+    div.className = "op";
+    div.innerHTML = `<span class="m ${e.method}">${e.method}</span><span class="p">${escapeHtml(e.path)}</span><span class="s">${escapeHtml(e.op.summary || "")}</span>`;
+    div.onclick = () => selectOp(e, div);
+    list.appendChild(div);
+  }
+}
+
+function selectOp(e, el) {
+  document.querySelectorAll(".op.active").forEach(n => n.classList.remove("active"));
+  el.classList.add("active");
+  current = e;
+  $("method").textContent = e.method;
+  $("method").className = "m " + e.method;
+  $("pathTpl").textContent = e.path;
+  $("summary").textContent = e.op.summary || "";
+  renderParams(e.op.parameters || []);
+  const hasBody = !!e.op.requestBody;
+  const bb = $("bodyBox");
+  bb.style.display = hasBody ? "" : "none";
+  if (hasBody) {
+    bb.open = true;
+    $("body").value = exampleForBody(e.op.requestBody) || "{}";
+  } else {
+    $("body").value = "";
+  }
+  $("out").textContent = "Ready. Fill params and click Send.";
+  $("resStatus").textContent = ""; $("timing").textContent = "";
+}
+
+function renderParams(params) {
+  const box = $("paramsBox"); box.innerHTML = "";
+  if (!params.length) {
+    box.innerHTML = '<span class="meta" style="grid-column:1/-1">No parameters.</span>';
     return;
   }
-  statusEl.textContent = "fetching " + path + " ..."; statusEl.className = "";
-  timingEl.textContent = "";
-  const t0 = performance.now();
-  try {
-    const res = await fetch(API + path, {
-      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
-    });
-    const dt = (performance.now() - t0).toFixed(0);
-    timingEl.textContent = dt + " ms";
-    statusEl.textContent = "HTTP " + res.status + " " + res.statusText;
-    statusEl.className = res.ok ? "ok" : "err";
-    const text = await res.text();
-    try { outEl.textContent = JSON.stringify(JSON.parse(text), null, 2); }
-    catch { outEl.textContent = text; }
-  } catch (e) {
-    statusEl.textContent = "network error"; statusEl.className = "err";
-    outEl.textContent = String(e);
+  for (const p of params) {
+    const lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = p.name + " (" + (p.in || "query") + ")";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.dataset.name = p.name;
+    inp.dataset.in = p.in || "query";
+    inp.placeholder = (p.schema && (p.schema.example ?? p.schema.format ?? p.schema.type)) || "";
+    const tag = document.createElement("span");
+    tag.className = p.required ? "req" : "opt";
+    tag.textContent = p.required ? "required" : "optional";
+    box.appendChild(lbl); box.appendChild(inp); box.appendChild(tag);
   }
 }
-$("go").onclick = doFetch;
-pathEl.addEventListener("keydown", (e) => { if (e.key === "Enter") doFetch(); });
+
+function exampleForBody(rb) {
+  const json = rb && rb.content && rb.content["application/json"];
+  if (!json) return "{}";
+  if (json.example !== undefined) return JSON.stringify(json.example, null, 2);
+  const ex = json.examples && Object.values(json.examples)[0];
+  if (ex && ex.value !== undefined) return JSON.stringify(ex.value, null, 2);
+  return "{}";
+}
+
+async function send() {
+  if (!current) { flash("pick an endpoint first", "err"); return; }
+  const token = tokenEl.value.trim();
+  if (!token) { flash("no token", "err"); return; }
+
+  let path = current.path;
+  const qs = new URLSearchParams();
+  for (const inp of document.querySelectorAll("#paramsBox input")) {
+    const v = inp.value.trim();
+    if (!v) continue;
+    if (inp.dataset.in === "path") {
+      path = path.replace("{" + inp.dataset.name + "}", encodeURIComponent(v));
+    } else {
+      qs.append(inp.dataset.name, v);
+    }
+  }
+  const url = API + path + (qs.toString() ? "?" + qs.toString() : "");
+
+  const init = {
+    method: current.method,
+    headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+  };
+  if (current.op.requestBody && $("body").value.trim()) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = $("body").value;
+  }
+
+  flash("sending " + current.method + " " + path + " ...");
+  $("resStatus").textContent = ""; $("timing").textContent = "";
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, init);
+    const dt = (performance.now() - t0).toFixed(0);
+    $("timing").textContent = dt + " ms";
+    const rs = $("resStatus");
+    rs.textContent = "HTTP " + res.status + " " + res.statusText;
+    rs.className = "meta " + (res.ok ? "ok" : "err");
+    const text = await res.text();
+    try { $("out").textContent = JSON.stringify(JSON.parse(text), null, 2); }
+    catch { $("out").textContent = text; }
+    flash("done", res.ok ? "ok" : "err");
+  } catch (e) {
+    flash("network error", "err");
+    $("out").textContent = String(e);
+  }
+}
+$("go").onclick = send;
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+loadSpec().then(renderOps).catch(e => { $("ops").textContent = String(e); });
 </script>
 </body>
 </html>
