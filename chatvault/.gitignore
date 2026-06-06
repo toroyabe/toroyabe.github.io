@@ -1,0 +1,35 @@
+# === TDLib 大型二進位（用 scripts/fetch-tdlib.sh 還原，勿進 git）===
+ThirdParty/**/*.xcframework/
+ThirdParty/**/TDLibFramework.xcframework/
+*.xcframework.zip
+TDLibFramework.zip
+
+# === Xcode / SwiftPM build 產物 ===
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+
+# === Swift Package Manager ===
+Package.resolved
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# === 編輯器 ===
+.idea/
+*.swp
+*~
+
+# === ChatVault Library / 本地測試資料（避免誤把實際聊天資料進 git）===
+*.chatvaultlib/
+TestLibrary/
+*.db
+*.sqlite
+*.sqlite3
