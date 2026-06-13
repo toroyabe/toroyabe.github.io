@@ -1,0 +1,172 @@
+:root {
+  --accent: #7bdc4a;
+  --accent-dark: #3f7a25;
+  --danger: #e84545;
+  --bg: #0b0e0a;
+  --panel: rgba(16, 22, 14, 0.92);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: "Trebuchet MS", "Microsoft JhengHei", system-ui, sans-serif;
+  color: #e8f0e0;
+  user-select: none;
+  touch-action: none;
+}
+
+#game-wrap { position: fixed; inset: 0; }
+
+#game {
+  display: block;
+  width: 100%; height: 100%;
+  background: #12180e;
+  image-rendering: pixelated;
+}
+
+.hidden { display: none !important; }
+
+/* ---------- HUD ---------- */
+#hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: env(safe-area-inset-top) 12px 0;
+  pointer-events: none;
+  z-index: 10;
+}
+#hud-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 10px;
+}
+#hp-bar {
+  position: relative;
+  flex: 1; max-width: 280px; height: 22px;
+  background: #2a1414; border: 2px solid #000; border-radius: 4px;
+  overflow: hidden;
+}
+#hp-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(180deg, #ff6b6b, #c0392b);
+  transition: width 0.15s linear;
+}
+#hp-text {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: bold; text-shadow: 0 1px 1px #000;
+}
+#hud-stats {
+  display: flex; gap: 14px; font-weight: bold;
+  font-size: 15px; text-shadow: 0 1px 2px #000;
+}
+#hud-stats span { white-space: nowrap; }
+#timer { color: #fff; }
+#kills { color: #ff8a8a; }
+#level { color: var(--accent); }
+
+#xp-bar {
+  margin-top: 6px; height: 7px;
+  background: #1a2410; border: 1px solid #000; border-radius: 3px;
+  overflow: hidden;
+}
+#xp-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(180deg, #a3ff6b, var(--accent-dark));
+  transition: width 0.15s linear;
+}
+
+/* ---------- Joystick ---------- */
+#joystick {
+  position: absolute;
+  left: max(24px, env(safe-area-inset-left));
+  bottom: max(28px, env(safe-area-inset-bottom));
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  border: 2px solid rgba(255,255,255,0.18);
+  z-index: 20;
+  touch-action: none;
+}
+#joystick-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 52px; height: 52px; margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgba(123,220,74,0.55);
+  border: 2px solid rgba(255,255,255,0.4);
+}
+
+/* ---------- Pause ---------- */
+#btn-pause {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top)); right: 12px;
+  z-index: 25;
+  width: 40px; height: 40px;
+  background: rgba(0,0,0,0.45); color: #fff;
+  border: 2px solid rgba(255,255,255,0.2); border-radius: 8px;
+  font-size: 16px; cursor: pointer;
+}
+
+/* ---------- Overlays ---------- */
+.overlay {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(4, 6, 3, 0.78);
+  backdrop-filter: blur(3px);
+  padding: 20px;
+}
+.panel {
+  background: var(--panel);
+  border: 2px solid var(--accent-dark);
+  border-radius: 14px;
+  padding: 28px 26px;
+  max-width: 440px; width: 100%;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+}
+
+h1 {
+  font-size: clamp(34px, 9vw, 52px);
+  line-height: 0.95; letter-spacing: 2px;
+  color: var(--accent);
+  text-shadow: 0 3px 0 #1d3a10, 0 0 18px rgba(123,220,74,0.4);
+}
+h1 span { display: block; color: #fff; font-size: 0.62em; letter-spacing: 6px; }
+.subtitle { margin: 14px 0 22px; color: #9fb38c; font-size: 14px; }
+
+h2 { font-size: 24px; margin-bottom: 18px; color: var(--accent); }
+h2.dead { color: var(--danger); text-shadow: 0 0 14px rgba(232,69,69,0.5); }
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #06210a; font-weight: bold; font-size: 18px;
+  border: none; border-radius: 10px;
+  padding: 14px 30px; cursor: pointer;
+  box-shadow: 0 4px 0 #234712;
+  transition: transform 0.05s;
+}
+.btn-primary:active { transform: translateY(3px); box-shadow: 0 1px 0 #234712; }
+
+.howto {
+  margin-top: 20px; font-size: 13px; color: #97a888; line-height: 1.7;
+  border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;
+}
+
+/* ---------- Upgrade cards ---------- */
+#upgrade-cards { display: flex; flex-direction: column; gap: 12px; }
+.upgrade-card {
+  display: flex; align-items: center; gap: 14px; text-align: left;
+  background: rgba(255,255,255,0.04);
+  border: 2px solid rgba(123,220,74,0.25);
+  border-radius: 10px; padding: 14px 16px; cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, transform 0.05s;
+}
+.upgrade-card:active { transform: scale(0.98); }
+.upgrade-card:hover { background: rgba(123,220,74,0.12); border-color: var(--accent); }
+.upgrade-icon { font-size: 30px; width: 40px; text-align: center; flex-shrink: 0; }
+.upgrade-text b { display: block; color: #fff; font-size: 16px; margin-bottom: 3px; }
+.upgrade-text small { color: #9fb38c; font-size: 12px; line-height: 1.4; }
+.upgrade-lvl { margin-left: auto; color: var(--accent); font-size: 12px; font-weight: bold; white-space: nowrap; }
+
+#final-stats { margin-bottom: 22px; font-size: 16px; line-height: 1.9; color: #cdd9c0; }
+#final-stats b { color: var(--accent); }

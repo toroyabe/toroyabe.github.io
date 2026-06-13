@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0e0a" />
+<title>Zombie Survivors 殭屍倖存者</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-wrap">
+    <canvas id="game"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="hud-top">
+        <div id="hp-bar"><div id="hp-fill"></div><span id="hp-text">100/100</span></div>
+        <div id="hud-stats">
+          <span id="timer">00:00</span>
+          <span id="kills">☠ 0</span>
+          <span id="level">Lv 1</span>
+        </div>
+      </div>
+      <div id="xp-bar"><div id="xp-fill"></div></div>
+    </div>
+
+    <!-- Mobile joystick -->
+    <div id="joystick" class="hidden">
+      <div id="joystick-knob"></div>
+    </div>
+
+    <!-- Start screen -->
+    <div id="screen-start" class="overlay">
+      <div class="panel">
+        <h1>ZOMBIE<span>SURVIVORS</span></h1>
+        <p class="subtitle">殭屍倖存者 · 在屍潮中活下去</p>
+        <button id="btn-start" class="btn-primary">開始遊戲 ▶</button>
+        <div class="howto">
+          <p><b>電腦</b>：WASD / 方向鍵移動，武器自動攻擊</p>
+          <p><b>手機</b>：左下角虛擬搖桿移動</p>
+          <p>升級時選擇強化，活得越久越強！</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Level up screen -->
+    <div id="screen-levelup" class="overlay hidden">
+      <div class="panel">
+        <h2>升級！選擇強化</h2>
+        <div id="upgrade-cards"></div>
+      </div>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="screen-over" class="overlay hidden">
+      <div class="panel">
+        <h2 class="dead">你被吞噬了…</h2>
+        <div id="final-stats"></div>
+        <button id="btn-restart" class="btn-primary">再試一次 ↻</button>
+      </div>
+    </div>
+
+    <!-- Pause button -->
+    <button id="btn-pause" class="hidden">⏸</button>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
