@@ -1,5 +1,9 @@
 # Business Central MCP server（給 Claude Code 用）
 
+> ⚠️ **首選請用官方做法**：微軟在 2026 Wave 1 已內建官方 BC MCP Server。
+> 你的環境（Application 28.1）完全支援，建議照 [`官方做法-Claude-Desktop.md`](./官方做法-Claude-Desktop.md) 設定。
+> 本資料夾的自製 server 僅作為**備案**（例如環境版本過舊時使用）。
+
 讓 **Claude Code 直接串接 Microsoft Dynamics 365 Business Central**，裝好之後你就能用對話的方式查 BC 資料，例如：
 
 > 「列出未結清的銷售訂單」、「查客戶 C00010 的資料」、「這個月開了哪些發票？」
