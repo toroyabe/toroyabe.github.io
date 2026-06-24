@@ -202,6 +202,63 @@ ITLM Ventures Pte Ltd   ← 注意：Name 拼成 ITLM，要照這個填
 
 > `Z_` 開頭的 8 間都是測試/勿動，不要連。
 
+### 20 條連接器名稱對照表
+用法：在 Claude 直接指定確切名稱最穩，例如「用 `business-central-craveva` 查 company information」。
+
+| 公司 | 連接器名稱 |
+|---|---|
+| Craveva Pte Ltd | `business-central-craveva` |
+| ILHA Formosa Holding Pte Ltd | `business-central-ilha-formosa-holding` |
+| ILHA Gourmet Pte Ltd | `business-central-ilha-gourmet` |
+| ILTM Pte Ltd | `business-central-iltm` |
+| ILTM BK Pte Ltd | `business-central-iltm-bk` |
+| ILTM BP Pte Ltd | `business-central-iltm-bp` |
+| ILTM Central Pte Ltd | `business-central-iltm-central` |
+| ILTM Clementi Pte Ltd | `business-central-iltm-clementi` |
+| ILTM East Pte Ltd | `business-central-iltm-east` |
+| ILTM JE Pte Ltd | `business-central-iltm-je` |
+| ILTM North East Pte Ltd | `business-central-iltm-north-east` |
+| ILTM North Point Pte Ltd | `business-central-iltm-north-point` |
+| ILTM Punggol Pte Ltd | `business-central-iltm-punggol` |
+| ILTM SG Pte Ltd | `business-central-iltm-sg` |
+| ILTM SRG Pte Ltd | `business-central-iltm-srg` |
+| ILTM Tampines Pte Ltd | `business-central-iltm-tampines` |
+| ILTM West Pte Ltd | `business-central-iltm-west` |
+| ILTM Woodleigh Pte Ltd | `business-central-iltm-woodleigh` |
+| ILTM Yakitori Pte Ltd | `business-central-iltm-yakitori` |
+| ITLM Ventures Pte Ltd | `business-central-itlm-ventures` |
+
+---
+
+## 常用查詢問法
+
+對話時建議「**指定連接器 + 要做什麼**」。範例：
+
+**基本資料**
+- 「用 `business-central-iltm` 查 company information」
+- 「用 `business-central-craveva` 列出所有客戶」
+- 「用 `business-central-iltm-yakitori` 列出項目（items）和庫存數量」
+
+**銷售 / 應收**
+- 「用 `business-central-iltm` 列出本月的銷售發票」
+- 「用 `business-central-iltm` 查未結清的應收帳款（open customer ledger entries）」
+- 「用 `business-central-iltm` 查客戶 XXX 的所有交易明細」
+
+**採購 / 應付**
+- 「用 `business-central-iltm` 列出供應商（vendors）」
+- 「用 `business-central-iltm` 查未付的採購發票」
+
+**庫存**
+- 「用 `business-central-iltm` 查項目 XXX 目前庫存」
+- 「用 `business-central-iltm` 列出庫存量低於 10 的項目」
+
+**跨店比較（無單一工具，需逐間問再彙總）**
+- 「分別用 iltm、iltm-tampines、iltm-yakitori 查本月銷售發票總額，再幫我做成比較表」
+
+> 小技巧：
+> - 不確定某資料叫什麼，先問「你有哪些跟 customer/invoice 相關的 actions？」(它會跑 `bc_actions_search`)。
+> - 目前全唯讀，問「列出/查詢」類最順；改資料/過帳目前會被 BC 擋。
+
 ---
 
 ## 疑難排解
