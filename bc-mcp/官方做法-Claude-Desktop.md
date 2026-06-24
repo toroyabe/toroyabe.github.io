@@ -97,31 +97,23 @@ python3 -m bc_mcp_proxy --TenantId "d212bfb8-dfd0-4db0-8493-261a6393470f" \
 
 ## 階段 4：把設定貼進 Claude Desktop
 
-1. 精靈會印出一段 **Claude Desktop 用的 JSON snippet**（claude_mcp.json）。
-2. 開啟設定檔（Mac 路徑）：
-   ```
-   ~/Library/Application Support/Claude/claude_desktop_config.json
-   ```
-   （沒有就新建）
-3. 把 snippet 併進 `"mcpServers": { ... }` 區塊。大致長這樣：
-   ```json
-   {
-     "mcpServers": {
-       "business-central": {
-         "command": "python3",
-         "args": ["-m", "bc_mcp_proxy"],
-         "env": {
-           "BC_TENANT_ID": "d212bfb8-dfd0-4db0-8493-261a6393470f",
-           "BC_CLIENT_ID": "274ce507-78d3-458f-9e0e-29351b13eec0",
-           "BC_ENVIRONMENT": "Production",
-           "BC_COMPANY": "ILTM Pte Ltd"
-         }
-       }
-     }
-   }
-   ```
-   （實際以精靈產生的內容為準。）
-4. **完全關閉並重開 Claude Desktop**。
+> ⚠️ 實測重點：精靈產生的 `~/.bc_mcp_proxy/claude_mcp.json` **只有「裡面那一塊」**
+> （`command` + `args`），**少了外層 `mcpServers` 包裝與伺服器名字**。直接複製整個檔案會無效，必須包起來。
+> 另外 `command` 是**實際的 Python 絕對路徑**（例如本機是 miniconda：
+> `/opt/homebrew/Caskroom/miniconda/base/bin/python3`），不是 `python3`。
+
+最穩的做法：用一行指令讀取精靈產生的檔案、自動包好、寫進 Claude Desktop 設定檔。
+
+**macOS（單一公司 = ILTM Pte Ltd）：**
+```bash
+mkdir -p ~/Library/Application\ Support/Claude && python3 -c "import json,os; s=json.load(open(os.path.expanduser('~/.bc_mcp_proxy/claude_mcp.json'))); d=os.path.expanduser('~/Library/Application Support/Claude/claude_desktop_config.json'); json.dump({'mcpServers':{'business-central':s}}, open(d,'w'), indent=2); print('OK ->', d)"
+```
+
+設定檔位置：`~/Library/Application Support/Claude/claude_desktop_config.json`
+
+最後 **⌘ + Q 完全關閉 Claude Desktop** 再重開（不是只關視窗）。
+
+> 多行貼上（heredoc）在終端機常會卡在 `>` 等待 `EOF`，看起來「沒反應」。用上面的**單行 / 一行 `python -c`** 最不易出錯。
 
 ---
 
@@ -137,18 +129,52 @@ python3 -m bc_mcp_proxy --TenantId "d212bfb8-dfd0-4db0-8493-261a6393470f" \
 
 ---
 
+## 在 Windows 電腦設定（公司電腦）
+
+Entra App **不用重做**（全公司共用）。只要在 Windows 做「裝 proxy → 跑精靈 → 寫設定 → 重開」。
+用「命令提示字元 (Command Prompt)」或 PowerShell：
+
+```bat
+:: 0. 確認有 Python（沒有就到 Microsoft Store 或 python.org 裝，安裝勾 Add to PATH）
+python --version
+
+:: 1. 安裝 proxy
+python -m pip install --upgrade bc-mcp-proxy
+
+:: 2. 跑精靈（填 Tenant / Client / Production / ILTM Pte Ltd / Claude，並 device-code 登入）
+python -m bc_mcp_proxy setup
+```
+
+寫入 Claude Desktop 設定（Windows 路徑是 `%APPDATA%\Claude\`，與 Mac 不同）：
+
+```bat
+python -c "import json,os; s=json.load(open(os.path.join(os.path.expanduser('~'),'.bc_mcp_proxy','claude_mcp.json'))); d=os.path.join(os.environ['APPDATA'],'Claude','claude_desktop_config.json'); os.makedirs(os.path.dirname(d),exist_ok=True); json.dump({'mcpServers':{'business-central':s}},open(d,'w'),indent=2); print('OK ->',d)"
+```
+
+最後完全結束 Claude Desktop（工作列圖示右鍵 → Quit）再重開。
+
+---
+
 ## 之後：加其他公司
 
 20 間正式公司共用同一個 BC 設定與同一個 Entra App，只是 **Company 值不同**。
-要多連一間，在 `claude_desktop_config.json` 複製一份、改 `BC_COMPANY` 和伺服器名稱即可，例如：
+每間 = `claude_desktop_config.json` 裡一條 connector（同 Tenant/Client，只差 `--Company`）。
 
-```json
-"business-central-craveva": {
-  "command": "python3",
-  "args": ["-m", "bc_mcp_proxy"],
-  "env": { "...": "...", "BC_COMPANY": "Craveva Pte Ltd" }
-}
+下面一行指令會**一次產生全部 20 間**具名 connector（`business-central-iltm`、`business-central-craveva`…），
+並自動沿用精靈產生的 Python 路徑（跨平台都對）。
+
+**macOS：**
+```bash
+python3 -c "import json,os,re; base=json.load(open(os.path.expanduser('~/.bc_mcp_proxy/claude_mcp.json'))); cmd=base['command']; C=['Craveva Pte Ltd','ILHA Formosa Holding Pte Ltd','ILHA Gourmet Pte Ltd','ILTM BK Pte Ltd','ILTM BP Pte Ltd','ILTM Central Pte Ltd','ILTM Clementi Pte Ltd','ILTM East Pte Ltd','ILTM JE Pte Ltd','ILTM North East Pte Ltd','ILTM North Point Pte Ltd','ILTM Pte Ltd','ILTM Punggol Pte Ltd','ILTM SG Pte Ltd','ILTM SRG Pte Ltd','ILTM Tampines Pte Ltd','ILTM West Pte Ltd','ILTM Woodleigh Pte Ltd','ILTM Yakitori Pte Ltd','ITLM Ventures Pte Ltd']; tid='d212bfb8-dfd0-4db0-8493-261a6393470f'; cid='274ce507-78d3-458f-9e0e-29351b13eec0'; S={('business-central-'+re.sub('[^a-z0-9]+','-',c.lower().replace(' pte ltd','')).strip('-')):{'command':cmd,'args':['-m','bc_mcp_proxy','--TenantId',tid,'--ClientId',cid,'--Environment','Production','--Company',c,'--ConfigurationName','Claude']} for c in C}; d=os.path.expanduser('~/Library/Application Support/Claude/claude_desktop_config.json'); json.dump({'mcpServers':S},open(d,'w'),indent=2); print('OK',len(S),'->',d)"
 ```
+
+**Windows：**（與上相同，只差結尾路徑用 `%APPDATA%`）
+```bat
+python -c "import json,os,re; base=json.load(open(os.path.join(os.path.expanduser('~'),'.bc_mcp_proxy','claude_mcp.json'))); cmd=base['command']; C=['Craveva Pte Ltd','ILHA Formosa Holding Pte Ltd','ILHA Gourmet Pte Ltd','ILTM BK Pte Ltd','ILTM BP Pte Ltd','ILTM Central Pte Ltd','ILTM Clementi Pte Ltd','ILTM East Pte Ltd','ILTM JE Pte Ltd','ILTM North East Pte Ltd','ILTM North Point Pte Ltd','ILTM Pte Ltd','ILTM Punggol Pte Ltd','ILTM SG Pte Ltd','ILTM SRG Pte Ltd','ILTM Tampines Pte Ltd','ILTM West Pte Ltd','ILTM Woodleigh Pte Ltd','ILTM Yakitori Pte Ltd','ITLM Ventures Pte Ltd']; tid='d212bfb8-dfd0-4db0-8493-261a6393470f'; cid='274ce507-78d3-458f-9e0e-29351b13eec0'; S={('business-central-'+re.sub('[^a-z0-9]+','-',c.lower().replace(' pte ltd','')).strip('-')):{'command':cmd,'args':['-m','bc_mcp_proxy','--TenantId',tid,'--ClientId',cid,'--Environment','Production','--Company',c,'--ConfigurationName','Claude']} for c in C}; d=os.path.join(os.environ['APPDATA'],'Claude','claude_desktop_config.json'); json.dump({'mcpServers':S},open(d,'w'),indent=2); print('OK',len(S),'->',d)"
+```
+
+> ⚠️ 別把 Windows 版跑在 Mac（會出 `KeyError: 'APPDATA'`），反之亦然。差別只在最後設定檔路徑。
+> 用法：在 Claude 說「用 iltm-tampines 列出客戶」「craveva 最近的發票」。
 
 ### 20 間正式公司的 Company 值（精確）
 ```
@@ -187,6 +213,8 @@ ITLM Ventures Pte Ltd   ← 注意：Name 拼成 ITLM，要照這個填
 | 權限/consent 錯誤 | 回階段 2c 確認已 **Grant admin consent** |
 | redirect 錯誤 | 確認 redirect URI 是 `ms-appx-web://Microsoft.AAD.BrokerPlugin/<clientID>` 且 client id 正確 |
 | 只能讀不能改 | 正常，目前 MCP 設定全唯讀；要寫入需在 BC 端開對應 Create/Modify 權限 |
+| 工具呼叫卡住/timeout（等很久沒回） | ① token 過期 → 終端機重跑一次 `python3 -m bc_mcp_proxy setup` 重新登入；② 在 Claude Desktop 完全 ⌘+Q 重開讓 proxy 重啟；③ 首次呼叫某間公司可能要再授權一次。timeout ≠「0 筆資料」 |
+| 改了設定檔沒生效 | 一定要 **⌘+Q（Mac）/ 工作列右鍵 Quit（Win）完全結束**再開，只關視窗不會重讀設定 |
 
 ## 參考
 - Business Central MCP Server Overview：https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/ai/mcp-overview
