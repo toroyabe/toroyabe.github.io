@@ -13,7 +13,7 @@
 | Environment | `Production` |
 | BC 端 MCP 設定名稱 | `Claude` |
 | 先連的公司 (Company) | `ILTM Pte Ltd` |
-| Client ID | ⬜ 階段 2 註冊後填入 |
+| Client ID | `274ce507-78d3-458f-9e0e-29351b13eec0` |
 
 > 連線端點：`https://mcp.businesscentral.dynamics.com`（proxy 會自動處理，不用手動填）
 
@@ -86,7 +86,7 @@ python3 -m bc_mcp_proxy setup
 
 ```bash
 python3 -m bc_mcp_proxy --TenantId "d212bfb8-dfd0-4db0-8493-261a6393470f" \
-  --ClientId "<CLIENT_ID>" \
+  --ClientId "274ce507-78d3-458f-9e0e-29351b13eec0" \
   --Environment "Production" \
   --Company "ILTM Pte Ltd"
 ```
@@ -112,7 +112,7 @@ python3 -m bc_mcp_proxy --TenantId "d212bfb8-dfd0-4db0-8493-261a6393470f" \
          "args": ["-m", "bc_mcp_proxy"],
          "env": {
            "BC_TENANT_ID": "d212bfb8-dfd0-4db0-8493-261a6393470f",
-           "BC_CLIENT_ID": "<CLIENT_ID>",
+           "BC_CLIENT_ID": "274ce507-78d3-458f-9e0e-29351b13eec0",
            "BC_ENVIRONMENT": "Production",
            "BC_COMPANY": "ILTM Pte Ltd"
          }
